@@ -3,6 +3,136 @@ module UXSettings
   MARGIN = " " * PROMPT.size
 end
 
+module UI
+  require 'io/console'
+  include UXSettings
+
+  TERMINATION_CHARS = { "\u0003" => "^C",
+                        "\u0004" => "^D",
+                        "\u001A" => "^Z" }
+
+  def get_char(args)
+    get_input(**args.merge({ char_only: true }))
+  end
+
+  def get_string(args)
+    get_input(**args)
+  end
+
+  def wait_for_any_key(message = PROMPT + "Press ANY KEY to continue")
+    puts message
+    yield_char
+  end
+
+  def yield_char
+    char_input = STDIN.getch.downcase
+
+    termination_input = TERMINATION_CHARS[char_input]
+    abort("Program aborted (#{termination_input})") if termination_input
+
+    char_input
+  end
+
+  private
+
+  def get_input(message:,      invalid_msg: "Invalid input!",
+                expected: nil, char_only: false,
+                prompt:   "")
+
+    puts prompt + message
+    loop do
+      input = char_only ? yield_char : gets.strip
+
+      break input unless (expected && !expected.include?(input)) || input.empty?
+
+      puts prompt + invalid_msg
+    end
+  end
+end
+
+module UX
+  include UXSettings
+
+  def clear_screen
+    system("cls") || system("clear")
+  end
+
+  def display_after_loading(loading_text:,     final_text:,
+                            loading_char: "■", loading_length: 6,
+                            loading_time: 1.2)
+    loading_bars = generate_loading_bars(loading_char, loading_length)
+    sleep_time   = loading_time / loading_length.to_f
+    length_diff  = length_difference((loading_text + loading_bars.last),
+                                     final_text)
+
+    loading_bars.each do |loading_bar|
+      print loading_text + loading_bar + "\r"
+      sleep sleep_time
+    end
+    puts final_text + whitespace(length_diff)
+  end
+
+  def print_in_border(text)
+    hr_border = MARGIN + "+" + "=" * (text.length + 2) + "+"
+
+    puts hr_border
+    puts MARGIN + "| " + text + " |"
+    puts hr_border
+  end
+
+  def prompt(*messages)
+    messages.each { |msg| puts PROMPT + msg }
+  end
+
+  private
+
+  def generate_loading_bars(char, width)
+    Array.new(width).map.with_index do |_, idx|
+      (char * (idx + 1)).ljust(width)
+    end
+  end
+
+  def length_difference(first_string, second_string)
+    first_string.length - second_string.length
+  end
+
+  def whitespace(length)
+    length.positive? ? (" " * length) : ""
+  end
+end
+
+module GameInterface
+  extend UI, UX
+  include UXSettings
+
+  CHOICE_MSG = MARGIN + "<r> rock <p> paper <s> scissors <l> lizard <o> spock"
+  CHOICES    = { "r" => :rock,   "p" => :paper, "s" => :scissors,
+                 "l" => :lizard, "o" => :spock }
+
+  def self.choose_move(player)
+    valid       = CHOICES.keys
+    msg         = "#{player.name}, please choose your move: \n" + CHOICE_MSG
+    msg_invalid = "Please choose one of: " + valid.join(", ")
+
+    choice = get_char(message:   msg,    invalid_msg: msg_invalid,
+                      prompt:    PROMPT, expected:    valid,
+                      char_only: true)
+    CHOICES[choice]
+  end
+
+  def self.choose_name
+    get_string(message: "What's your name?",
+               prompt:  PROMPT)
+  end
+
+  def self.ask_for_rematch
+    get_char(message:   "Do you want to play another match? (y/n)",
+             prompt:    PROMPT,
+             char_only: true,
+             expected:  %w[y n])
+  end
+end
+
 class RPSLS
   attr_reader :players, :scoreboard, :winner
 
@@ -13,7 +143,7 @@ class RPSLS
   end
 
   def play
-    UX.clear_screen
+    GameInterface.clear_screen
     display_welcome_message
     until winner
       next_round
@@ -37,17 +167,18 @@ class RPSLS
   end
 
   def display_welcome_message
-    UX.prompt("Welcome to RPSLS Game!",
-              "The first to score #{points_to_win} points wins the game.")
+    GameInterface.prompt("Welcome to RPSLS Game!",
+                         "The first to score #{points_to_win} points wins" \
+                         "the game.")
   end
 
   def display_winner
-    UX.prompt("#{winner} wins the game!")
+    GameInterface.prompt("#{winner} wins the game!")
   end
 
   def next_round
     play_round
-    UI.wait_for_any_key
+    GameInterface.wait_for_any_key
     reload_view
     check_winner
   end
@@ -57,11 +188,11 @@ class RPSLS
   end
 
   def print_score
-    UX.print_in_border(scoreboard.to_s)
+    GameInterface.print_in_border(scoreboard.to_s)
   end
 
   def reload_view
-    UX.clear_screen
+    GameInterface.clear_screen
     print_score
   end
 end
@@ -143,8 +274,8 @@ class Round
       name_string   = "#{player}: "
       choice_string = name_string + choices[player].to_s
       if player.is_a?(Computer)
-        UX.display_after_loading(loading_text: name_string,
-                                 final_text:   choice_string)
+        GameInterface.display_after_loading(loading_text: name_string,
+                                            final_text:   choice_string)
       else
         puts choice_string
       end
@@ -162,7 +293,7 @@ class Round
   end
 
   def display_result
-    UX.prompt(winner ? "#{winner} wins the round!" : "It's a tie!")
+    GameInterface.prompt(winner ? "#{winner} wins the round!" : "It's a tie!")
   end
 
   def handle_choices
@@ -279,128 +410,6 @@ class Move
   attr_writer :value
 end
 
-module GameInterface
-  include UXSettings
-
-  CHOICE_MSG = MARGIN + "<r> rock <p> paper <s> scissors <l> lizard <o> spock"
-  CHOICES    = { "r" => :rock,   "p" => :paper, "s" => :scissors,
-                 "l" => :lizard, "o" => :spock }
-
-  def self.choose_move(player)
-    valid       = CHOICES.keys
-    msg         = "#{player.name}, please choose your move: \n" + CHOICE_MSG
-    msg_invalid = "Please choose one of: " + valid.join(", ")
-
-    choice = UI.get_input(message:   msg,    invalid_msg: msg_invalid,
-                          prompt:    PROMPT, expected:    valid,
-                          char_only: true)
-    CHOICES[choice]
-  end
-
-  def self.choose_name
-    UI.get_input(message: "What's your name?",
-                 prompt:  PROMPT)
-  end
-
-  def self.ask_for_rematch
-    UI.get_input(message:   "Do you want to play another match? (y/n)",
-                 prompt:    PROMPT,
-                 char_only: true,
-                 expected:  %w[y n])
-  end
-end
-
-module UI
-  require 'io/console'
-  include UXSettings
-
-  TERMINATION_CHARS = { "\u0003" => "^C",
-                        "\u0004" => "^D",
-                        "\u001A" => "^Z" }
-
-  def self.get_input(message:,      invalid_msg: "Invalid input!",
-                     expected: nil, char_only: false,
-                     prompt:   PROMPT)
-
-    puts prompt + message
-    loop do
-      input = char_only ? yield_char : gets.strip
-
-      break input unless (expected && !expected.include?(input)) || input.empty?
-
-      puts prompt + invalid_msg
-    end
-  end
-
-  def self.wait_for_any_key(message = PROMPT + "Press ANY KEY to continue")
-    puts message
-    yield_char
-  end
-
-  def self.yield_char
-    char_input = STDIN.getch.downcase
-
-    termination_input = TERMINATION_CHARS[char_input]
-    abort("Program aborted (#{termination_input})") if termination_input
-
-    char_input
-  end
-  private_class_method :yield_char
-end
-
-module UX
-  include UXSettings
-
-  def self.clear_screen
-    system("cls") || system("clear")
-  end
-
-  def self.display_after_loading(loading_text:,     final_text:,
-                                 loading_char: "■", loading_length: 6,
-                                 loading_time: 1.2)
-    loading_bars = generate_loading_bars(loading_char, loading_length)
-    sleep_time   = loading_time / loading_length.to_f
-    length_diff  = length_difference((loading_text + loading_bars.last),
-                                     final_text)
-
-    loading_bars.each do |loading_bar|
-      print loading_text + loading_bar + "\r"
-      sleep sleep_time
-    end
-    puts final_text + whitespace(length_diff)
-  end
-
-  def self.print_in_border(text)
-    hr_border = MARGIN + "+" + "=" * (text.length + 2) + "+"
-
-    puts hr_border
-    puts MARGIN + "| " + text + " |"
-    puts hr_border
-  end
-
-  def self.prompt(*messages)
-    messages.each { |msg| puts PROMPT + msg }
-  end
-
-  class << self
-    private
-
-    def generate_loading_bars(char, width)
-      Array.new(width).map.with_index do |_, idx|
-        (char * (idx + 1)).ljust(width)
-      end
-    end
-
-    def length_difference(first_string, second_string)
-      first_string.length - second_string.length
-    end
-
-    def whitespace(length)
-      length.positive? ? (" " * length) : ""
-    end
-  end
-end
-
 module GameHandler
   def self.play
     players = [Human.new, Computer.new]
@@ -414,7 +423,7 @@ module GameHandler
     private
 
     def print_goodbye
-      UX.prompt("Thanks for playing. Bye!")
+      GameInterface.prompt("Thanks for playing. Bye!")
     end
 
     def new_rpsls(players)
