@@ -143,8 +143,7 @@ class RPSLS
   end
 
   def play
-    GameInterface.clear_screen
-    display_welcome_message
+    display_game_info
     until winner
       next_round
     end
@@ -166,9 +165,8 @@ class RPSLS
     self.winner = found.first if found
   end
 
-  def display_welcome_message
-    GameInterface.prompt("Welcome to RPSLS Game!",
-                         "The first to score #{points_to_win} points wins" \
+  def display_game_info
+    GameInterface.prompt("The first to score #{points_to_win} points wins " \
                          "the game.")
   end
 
@@ -413,14 +411,21 @@ end
 module GameHandler
   def self.play
     players = [Human.new, Computer.new]
+    display_welcome_message
     loop do
       new_rpsls(players)
       break print_goodbye unless rematch?
+      GameInterface.clear_screen
     end
   end
 
   class << self
     private
+
+    def display_welcome_message
+      GameInterface.clear_screen
+      GameInterface.prompt("Welcome to RPSLS Game!")
+    end
 
     def print_goodbye
       GameInterface.prompt("Thanks for playing. Bye!")
