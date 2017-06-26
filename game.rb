@@ -12,11 +12,11 @@ module UI
                         "\u001A" => "^Z" }
 
   def get_char(args)
-    get_input(**args.merge({ char_only: true }))
+    get_input(**args) { yield_char }
   end
 
   def get_string(args)
-    get_input(**args)
+    get_input(**args) { gets.strip }
   end
 
   def wait_for_any_key(message = PROMPT + "Press ANY KEY to continue")
@@ -35,17 +35,14 @@ module UI
 
   private
 
-  def get_input(message:,      invalid_msg: "Invalid input!",
-                expected: nil, char_only: false,
-                prompt:   "")
-
-    puts prompt + message
+  def get_input(message:, invalid_msg: "Invalid input!", expected: nil)
+    puts PROMPT + message
     loop do
-      input = char_only ? yield_char : gets.strip
+      input = yield
 
       break input unless (expected && !expected.include?(input)) || input.empty?
 
-      puts prompt + invalid_msg
+      puts PROMPT + invalid_msg
     end
   end
 end
@@ -114,21 +111,16 @@ module GameInterface
     msg         = "#{player.name}, please choose your move: \n" + CHOICE_MSG
     msg_invalid = "Please choose one of: " + valid.join(", ")
 
-    choice = get_char(message:   msg,    invalid_msg: msg_invalid,
-                      prompt:    PROMPT, expected:    valid,
-                      char_only: true)
+    choice = get_char(message: msg, invalid_msg: msg_invalid, expected: valid)
     CHOICES[choice]
   end
 
   def self.choose_name
-    get_string(message: "What's your name?",
-               prompt:  PROMPT)
+    get_string(message: "What's your name?")
   end
 
   def self.ask_for_rematch
     get_char(message:   "Do you want to play another match? (y/n)",
-             prompt:    PROMPT,
-             char_only: true,
              expected:  %w[y n])
   end
 end
